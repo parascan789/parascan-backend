@@ -3,10 +3,10 @@
 Per model: accuracy, macro-F1, per-class report and a confusion matrix, written to
 models/<model>/eval_test.json and models/<model>/confusion_test.png.
 
-With --pipeline: runs the full two-stage pipeline on every test image from
-dataset/splits.csv and reports stage-1 accuracy and end-to-end accuracy, written to
-models/pipeline_eval_test.json. Thin-smear filariasis images have no thin-model class,
-so they count towards stage 1 only.
+With --pipeline: runs the full smear -> disease -> species pipeline on every test image
+from dataset/splits.csv and reports accuracy at each stage, the final result accuracy
+and how many results were inconclusive (disease confidence below the threshold),
+written to models/pipeline_eval_test.json.
 
 Usage:
     uv run python -m training_scripts.evaluate --model thin_thick_pbs_ic
@@ -27,13 +27,16 @@ from PIL import Image
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
 
 from parascan.config import (
+    DISEASE_MODEL_FOR_SMEAR,
     MODEL_CLASSES,
     MODELS_DIR,
+    NEGATIVE_CLASS,
     RAW_DIR,
     SMEAR_MODEL,
-    SPECIES_MODEL_FOR_SMEAR,
+    SPECIES_MODEL_FOR_DISEASE,
     SPLITS_CSV,
     checkpoint_path,
+    class_for_image,
     split_dir,
 )
 from parascan.modeling import pick_device
@@ -97,55 +100,70 @@ def evaluate_model(name: str, device: torch.device) -> dict:
     return result
 
 
-def expected_labels(image: str) -> tuple[str, str | None]:
-    """Ground truth (smear label, species label) for a raw image path; species is None if out of scope."""
-    def owner(model: str) -> str | None:
-        return next((c for c, folders in MODEL_CLASSES[model].items()
-                     if any(image.startswith(f + "/") for f in folders)), None)
-
-    smear = owner(SMEAR_MODEL)
-    return smear, owner(SPECIES_MODEL_FOR_SMEAR[smear]) if smear else None
+def expected_result(image: str) -> dict:
+    """Ground truth for a raw image path, following the same model chain as the pipeline."""
+    smear = class_for_image(SMEAR_MODEL, image)
+    disease = class_for_image(DISEASE_MODEL_FOR_SMEAR[smear], image)
+    species = None
+    if disease != NEGATIVE_CLASS:
+        species = class_for_image(SPECIES_MODEL_FOR_DISEASE[(smear, disease)], image)
+    return {"smear_type": smear, "disease": disease, "species": species,
+            "label": NEGATIVE_CLASS if disease == NEGATIVE_CLASS else species}
 
 
 def evaluate_pipeline(device: torch.device) -> dict:
     pipeline = Pipeline(str(device))
     with SPLITS_CSV.open(newline="", encoding="utf-8") as f:
         test_images = [r["image"] for r in csv.DictReader(f) if r["split"] == "test"]
+    if not test_images:
+        raise SystemExit("No test images in dataset/splits.csv; run prepare_dataset first.")
 
-    stage1_ok, e2e_ok, e2e_total, errors = 0, 0, 0, []
-    out_of_scope = Counter()
+    status_counts, rows = Counter(), []
+    smear_ok = disease_ok = final_ok = 0
     for img in test_images:
-        smear_true, species_true = expected_labels(img)
+        truth = expected_result(img)
         with Image.open(RAW_DIR / img) as im:
             pred = pipeline.predict(im)
-        smear_pred, species_pred = pred["smear_type"]["label"], pred["diagnosis"]["label"]
-        stage1_ok += smear_pred == smear_true
-        if species_true is None:
-            out_of_scope[img.rsplit("/", 1)[0]] += 1
-            continue
-        e2e_total += 1
-        if smear_pred == smear_true and species_pred == species_true:
-            e2e_ok += 1
-        else:
-            errors.append({"image": img, "expected": [smear_true, species_true], "predicted": [smear_pred, species_pred]})
+        got = {
+            "smear_type": pred["smear_type"]["label"],
+            "disease": pred["disease"]["label"],
+            "species": pred["species"]["label"] if pred["species"] else None,
+            "status": pred["result"]["status"],
+            "label": pred["result"]["label"],
+        }
+        status_counts[got["status"]] += 1
+        smear_ok += got["smear_type"] == truth["smear_type"]
+        disease_ok += got["smear_type"] == truth["smear_type"] and got["disease"] == truth["disease"]
+        correct = got["status"] != "inconclusive" and got["label"] == truth["label"]
+        final_ok += correct
+        if not correct:
+            rows.append({"image": img, "expected": truth, "predicted": got})
 
+    n = len(test_images)
+    decided = n - status_counts["inconclusive"]
     result = {
-        "n_test": len(test_images),
-        "stage1_accuracy": stage1_ok / max(len(test_images), 1),
-        "end_to_end_n": e2e_total,
-        "end_to_end_accuracy": e2e_ok / max(e2e_total, 1),
-        "stage2_out_of_scope": dict(out_of_scope),
-        "errors": errors,
+        "n_test": n,
+        "disease_threshold": pipeline.threshold,
+        "smear_type_accuracy": smear_ok / n,
+        "disease_accuracy": disease_ok / n,
+        "final_accuracy": final_ok / n,
+        "final_accuracy_excluding_inconclusive": final_ok / decided if decided else None,
+        "status_counts": dict(status_counts),
+        "not_correct": rows,
     }
     (MODELS_DIR / "pipeline_eval_test.json").write_text(json.dumps(result, indent=2))
 
-    print(f"\n=== Two-stage pipeline: {len(test_images)} test images ===")
-    print(f"Stage 1 (smear type) accuracy: {result['stage1_accuracy']:.3f}")
-    print(f"End-to-end accuracy:           {result['end_to_end_accuracy']:.3f} ({e2e_ok}/{e2e_total})")
-    if out_of_scope:
-        print(f"Stage-1 only (no stage-2 class): {dict(out_of_scope)}")
-    for e in errors:
-        print(f"  wrong: {e['image']}  expected {e['expected']}  got {e['predicted']}")
+    print(f"\n=== Pipeline: {n} test images, disease threshold {pipeline.threshold:.0%} ===")
+    print(f"Smear type correct:            {result['smear_type_accuracy']:.3f}")
+    print(f"Smear type + disease correct:  {result['disease_accuracy']:.3f}")
+    print(f"Final result correct:          {result['final_accuracy']:.3f}  ({final_ok}/{n})")
+    if decided:
+        print(f"  ...excluding inconclusive:   {result['final_accuracy_excluding_inconclusive']:.3f}  ({final_ok}/{decided})")
+    print(f"Results: {dict(status_counts)}")
+    for r in rows:
+        e, g = r["expected"], r["predicted"]
+        print(f"  {g['status']:<12} {r['image']}: expected {e['label']}, got {g['label']} "
+              f"(smear {g['smear_type']}, disease {g['disease']})")
     return result
 
 

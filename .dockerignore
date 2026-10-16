@@ -1,7 +1,0 @@
-.git
-.venv
-dataset
-training_scripts
-**/__pycache__
-models/**/*.json
-models/**/*.png

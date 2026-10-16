@@ -1,12 +1,13 @@
 """PARASCAN inference API.
 
-Run locally:
-    uv run uvicorn server.app:app --reload
+Run:
+    uv run python -m server [--host 0.0.0.0] [--port 8000] [--reload]
 
 Environment:
     PARASCAN_DEVICE        torch device, e.g. "cpu" or "cuda" (default: cuda if available)
     PARASCAN_CORS_ORIGINS  comma-separated allowed origins (default: none)
     PARASCAN_MAX_UPLOAD_MB max image size in MB (default: 15)
+    PARASCAN_DISEASE_THRESHOLD  minimum disease probability before classifying species (default: 0.80)
 """
 
 import os
@@ -32,7 +33,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="PARASCAN",
-    description="Two-stage blood smear classification: smear type, then malaria / lymphatic filariasis species.",
+    description="Blood smear classification: smear type, then disease (malaria / lymphatic filariasis), then species.",
     version="0.1.0",
     lifespan=lifespan,
 )

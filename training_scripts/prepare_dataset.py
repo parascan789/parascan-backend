@@ -30,6 +30,7 @@ from parascan.config import (
     SPLIT_FRACTIONS,
     SPLITS,
     SPLITS_CSV,
+    class_for_image,
     split_dir,
 )
 
@@ -151,12 +152,11 @@ def materialise(assignment: dict[str, str]) -> None:
 
         counts: dict[tuple[str, str], int] = defaultdict(int)
         for img, split in assignment.items():
-            for cls, folders in classes.items():
-                if any(img.startswith(folder.rstrip("/") + "/") for folder in folders):
-                    # Raw file names repeat across folders, so prefix the folder path.
-                    dest = split_dir(model_name, split) / cls / img.replace("/", "__")
-                    shutil.copy2(RAW_DIR / img, dest)
-                    counts[(cls, split)] += 1
+            cls = class_for_image(model_name, img)
+            if cls:
+                # Raw file names repeat across folders, so prefix the folder path.
+                shutil.copy2(RAW_DIR / img, split_dir(model_name, split) / cls / img.replace("/", "__"))
+                counts[(cls, split)] += 1
 
         print(f"\n{model_name}")
         for cls in classes:

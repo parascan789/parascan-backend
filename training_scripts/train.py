@@ -7,6 +7,7 @@ checkpoint with the best validation macro-F1 is saved to models/<model>/model.pt
 Usage:
     uv run python -m training_scripts.train --model thin_thick_pbs_ic
     uv run python -m training_scripts.train --model thick_mlf_ic --epochs 60
+    uv run python -m training_scripts.train --model all
 """
 
 import argparse
@@ -63,7 +64,10 @@ def resolve_classes(model_name: str, allow_missing: bool) -> list[str]:
         )
     for c in empty:
         print(f"warning: training without class '{c}' (no images)")
-    return [c for c in classes if c not in empty]
+    classes = [c for c in classes if c not in empty]
+    if len(classes) < 2:
+        raise SystemExit(f"Need at least 2 classes with training images, have {classes}.")
+    return classes
 
 
 def set_seed(seed: int) -> None:
@@ -97,29 +101,15 @@ def run_epoch(model, loader, criterion, device, optimizer=None, scaler=None):
     return total_loss / n, acc, f1
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--model", required=True, choices=list(MODEL_CLASSES))
-    parser.add_argument("--epochs", type=int, default=40, help="max fine-tuning epochs (after head warm-up)")
-    parser.add_argument("--warmup-epochs", type=int, default=5, help="epochs with frozen backbone")
-    parser.add_argument("--batch-size", type=int, default=16)
-    parser.add_argument("--lr", type=float, default=1e-4, help="backbone learning rate during fine-tuning")
-    parser.add_argument("--head-lr", type=float, default=1e-3)
-    parser.add_argument("--patience", type=int, default=10, help="early-stopping patience in epochs")
-    parser.add_argument("--workers", type=int, default=2)
-    parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--device", default=None)
-    parser.add_argument("--allow-missing-classes", action="store_true")
-    args = parser.parse_args()
-
+def train_model(model_name: str, args: argparse.Namespace) -> None:
     set_seed(args.seed)
     device = pick_device(args.device)
-    classes = resolve_classes(args.model, args.allow_missing_classes)
+    classes = resolve_classes(model_name, args.allow_missing_classes)
 
-    train_ds = SplitDataset(split_dir(args.model, "training"), classes, train_transform())
-    val_ds = SplitDataset(split_dir(args.model, "validation"), classes, eval_transform())
+    train_ds = SplitDataset(split_dir(model_name, "training"), classes, train_transform())
+    val_ds = SplitDataset(split_dir(model_name, "validation"), classes, eval_transform())
     counts = train_ds.class_counts(len(classes))
-    print(f"Model {args.model} on {device}; classes {dict(zip(classes, counts))}; "
+    print(f"Model {model_name} on {device}; classes {dict(zip(classes, counts))}; "
           f"{len(train_ds)} train / {len(val_ds)} val images")
     if not len(val_ds):
         raise SystemExit("Validation split is empty; rerun prepare_dataset.")
@@ -135,7 +125,7 @@ def main() -> None:
     criterion = nn.CrossEntropyLoss(weight=weights, label_smoothing=0.1)
     scaler = torch.amp.GradScaler(enabled=device.type == "cuda")
 
-    out_path = checkpoint_path(args.model)
+    out_path = checkpoint_path(model_name)
     best = {"val_f1": -1.0, "val_loss": float("inf")}
     history, stale = [], 0
     total_epochs = args.warmup_epochs + args.epochs
@@ -189,6 +179,36 @@ def main() -> None:
     (out_path.parent / "history.json").write_text(json.dumps(history, indent=2))
     print(f"\nDone in {(time.time() - start) / 60:.1f} min. Best epoch {best['epoch']}: "
           f"val F1 {best['val_f1']:.3f}, acc {best['val_acc']:.3f}. Saved {out_path}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--model", required=True, choices=["all", *MODEL_CLASSES])
+    parser.add_argument("--epochs", type=int, default=40, help="max fine-tuning epochs (after head warm-up)")
+    parser.add_argument("--warmup-epochs", type=int, default=5, help="epochs with frozen backbone")
+    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--lr", type=float, default=1e-4, help="backbone learning rate during fine-tuning")
+    parser.add_argument("--head-lr", type=float, default=1e-3)
+    parser.add_argument("--patience", type=int, default=10, help="early-stopping patience in epochs")
+    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--device", default=None)
+    parser.add_argument("--allow-missing-classes", action="store_true")
+    args = parser.parse_args()
+
+    if args.model != "all":
+        train_model(args.model, args)
+        return
+
+    skipped = {}
+    for name in MODEL_CLASSES:
+        try:
+            train_model(name, args)
+        except SystemExit as e:
+            print(f"\nSkipping {name}: {e}\n")
+            skipped[name] = str(e)
+    if skipped:
+        raise SystemExit(f"Not trained: {', '.join(skipped)}")
 
 
 if __name__ == "__main__":

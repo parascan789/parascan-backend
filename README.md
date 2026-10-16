@@ -1,25 +1,35 @@
 # PARASCAN backend
 
-A two-stage image classifier for peripheral blood smears (PBS), plus a FastAPI inference server.
+A three-stage image classifier for peripheral blood smears (PBS), plus a FastAPI inference server.
 
 ```
-image ──► thin_thick_pbs_ic ──► thick_pbs ──► thick_mlf_ic ──► negative | m_P_vivax | m_P_falciparum | lf_B_malayi | lf_W_bancrofti
-                            └─► thin_pbs  ──► thin_mlf_ic  ──► negative | m_P_vivax | m_P_falciparum
+                         ┌─ thick_pbs ─► thick_mlf_ic ─┬─ negative
+                         │                             ├─ malaria ≥ 80% ──────────────► thick_m_ic  ─► m_P_vivax | m_P_falciparum
+                         │                             └─ lymphatic_filariasis ≥ 80% ─► thick_lf_ic ─► lf_B_malayi | lf_W_bancrofti
+image ─► thin_thick_pbs_ic
+                         │                             ┌─ negative
+                         └─ thin_pbs ──► thin_mlf_ic ──┼─ malaria ≥ 80% ──────────────► thin_m_ic   ─► m_P_vivax | m_P_falciparum
+                                                       └─ lymphatic_filariasis ≥ 80% ─► thin_lf_ic  ─► lf_B_malayi | lf_W_bancrofti
 ```
 
-All three models are ImageNet-pretrained `densenet121` networks (PyTorch / torchvision), fine-tuned on `dataset/raw`.
+1. **Smear type:** thick or thin PBS.
+2. **Disease:** negative, malaria or lymphatic filariasis, using the model for that smear type.
+3. **Species:** only if the disease model's probability for malaria or lymphatic filariasis is at least the threshold (80%, `PARASCAN_DISEASE_THRESHOLD`). Below the threshold the result is **inconclusive** and should be reviewed manually.
 
-| Model | Classes |
-|---|---|
-| `thin_thick_pbs_ic` | `thick_pbs`, `thin_pbs` |
-| `thick_mlf_ic` | `negative`, `m_P_vivax`, `m_P_falciparum`, `lf_B_malayi`, `lf_W_bancrofti` |
-| `thin_mlf_ic` | `negative`, `m_P_vivax`, `m_P_falciparum` |
+All seven models are ImageNet-pretrained `densenet121` networks (PyTorch / torchvision), fine-tuned on `dataset/raw`.
 
-Class names map to raw folders in [parascan/config.py](parascan/config.py). Thin-smear filariasis images (`dataset/raw/thin_blood_smear/lymphatic_filariasis`) are used by the stage-1 model only.
+| Stage | Model | Classes |
+|---|---|---|
+| 1 | `thin_thick_pbs_ic` | `thick_pbs`, `thin_pbs` |
+| 2 | `thick_mlf_ic`, `thin_mlf_ic` | `negative`, `malaria`, `lymphatic_filariasis` |
+| 3 | `thick_m_ic`, `thin_m_ic` | `m_P_vivax`, `m_P_falciparum` |
+| 3 | `thick_lf_ic`, `thin_lf_ic` | `lf_B_malayi`, `lf_W_bancrofti` |
+
+Class names map to raw folders in [parascan/config.py](parascan/config.py).
 
 ## Setup
 
-Requires [uv](https://docs.astral.sh/uv/). On Windows/Linux this installs CUDA 12.8 PyTorch.
+Requires [uv](https://docs.astral.sh/uv/). On Windows/Linux this installs CUDA 12.8 PyTorch; training and inference use the GPU automatically when available.
 
 ```bash
 uv sync
@@ -27,7 +37,7 @@ uv sync
 
 ## Data
 
-Put images under `dataset/raw/<smear>/<disease>/<species>/`. Uninfected smears go in `dataset/raw/thick_blood_smear/normal/` and `dataset/raw/thin_blood_smear/normal/`; they feed the `negative` class. Record provenance and licence of each image in `dataset/raw/sources.csv`.
+Put images under `dataset/raw/<smear>/<disease>/<species>/`. Uninfected smears go in `dataset/raw/thick_blood_smear/normal/` and `dataset/raw/thin_blood_smear/normal/`; they feed the `negative` class of the disease models. Record provenance and licence of each image in `dataset/raw/sources.csv`.
 
 Images are not committed to git. `dataset/splits.csv` (which image is in which split) is committed.
 
@@ -37,47 +47,38 @@ Images are not committed to git. `dataset/splits.csv` (which image is in which s
 # 1. Split raw images into dataset/<model>/{training,validation,test}/<class>/
 uv run python -m training_scripts.prepare_dataset
 
-# 2. Train each model (best checkpoint -> models/<model>/model.pt)
-uv run python -m training_scripts.train --model thin_thick_pbs_ic
-uv run python -m training_scripts.train --model thick_mlf_ic
-uv run python -m training_scripts.train --model thin_mlf_ic
+# 2. Train (best checkpoint -> models/<model>/model.pt)
+uv run python -m training_scripts.train --model all
+uv run python -m training_scripts.train --model thick_mlf_ic --epochs 60   # or one at a time
 
-# 3. Test-set metrics per model, plus the full two-stage pipeline
+# 3. Test-set metrics per model, plus the full pipeline
 uv run python -m training_scripts.evaluate --all --pipeline
 ```
 
 Notes:
-- **Splits are shared and stable.** Each raw image gets one split used by all three models, so the pipeline test images were never seen by any model during training. Crops from the same source (same URL in `sources.csv`) and near-duplicate images are kept in the same split. Rerunning `prepare_dataset` after adding images keeps existing assignments; `--resplit` starts over.
-- **Missing classes.** `train` refuses to run if a class has no training images. `--allow-missing-classes` trains without them; the saved model then never predicts those classes.
+- **Splits are shared and stable.** Each raw image gets one split used by all models, so the pipeline test images were never seen by any model during training. Crops from the same source (same URL in `sources.csv`) and near-duplicate images are kept in the same split. Rerunning `prepare_dataset` after adding images keeps existing assignments; `--resplit` starts over.
+- **Missing classes.** `train` refuses to train a model if one of its classes has no training images; with `--model all` that model is skipped and listed at the end. `--allow-missing-classes` trains without the empty classes; that model then never predicts them.
 - **Training** first trains the classifier head with the backbone frozen (`--warmup-epochs`, default 5), then fine-tunes everything with cosine LR decay and early stopping on validation macro-F1. Loss is class-weighted with label smoothing. Run `--help` for all options.
-- **Outputs** in `models/<model>/`: `model.pt` (not committed), `history.json`, `eval_test.json`, `confusion_test.png`; pipeline results in `models/pipeline_eval_test.json`.
+- **Outputs** in `models/<model>/`: `model.pt` (not committed), `history.json`, `eval_test.json`, `confusion_test.png`; pipeline results in `models/pipeline_eval_test.json`, including how many test images came out inconclusive at the current threshold.
 
 ## Serve
 
 ```bash
-uv run uvicorn server.app:app --reload
+uv run python -m server                          # http://127.0.0.1:8000
+uv run python -m server --host 0.0.0.0 --port 8000   # reachable from other machines
 curl -F "file=@smear.jpg" http://localhost:8000/predict
 ```
 
-Interactive docs at http://localhost:8000/docs.
+Interactive docs at http://localhost:8000/docs. The server needs all seven `model.pt` files. `--reload` restarts on code changes during development. `HOST` and `PORT` environment variables are honoured too.
 
 | Endpoint | |
 |---|---|
-| `POST /predict` | multipart `file`; returns `smear_type` and `diagnosis` with label, confidence and per-class probabilities |
-| `GET /models` | loaded models, classes, training timestamps |
+| `POST /predict` | multipart `file`; returns `result` (`status`: `negative` / `positive` / `inconclusive`, final `label`) and each stage's prediction (`smear_type`, `disease`, `species`) with confidence and per-class probabilities. `species` is `null` unless the status is `positive`. |
+| `GET /models` | loaded models, classes, training timestamps, threshold |
 | `GET /health` | liveness |
 
-Environment variables: `PARASCAN_DEVICE` (`cpu`/`cuda`), `PARASCAN_CORS_ORIGINS` (comma-separated), `PARASCAN_MAX_UPLOAD_MB` (default 15).
+Environment variables: `PARASCAN_DEVICE` (`cpu`/`cuda`), `PARASCAN_DISEASE_THRESHOLD` (default `0.80`), `PARASCAN_CORS_ORIGINS` (comma-separated), `PARASCAN_MAX_UPLOAD_MB` (default 15).
 
-### Docker (CPU)
-
-Build after all three `model.pt` files exist:
-
-```bash
-docker build -t parascan-backend .
-docker run -p 8000:8000 parascan-backend
-```
-
-The container honours `$PORT`, which most container hosts set. The hosting provider is not chosen yet.
+To deploy on another machine: clone the repo, copy the `models/*/model.pt` files over, `uv sync`, then `uv run python -m server --host 0.0.0.0`. The hosting provider is not chosen yet.
 
 > PARASCAN is a research prototype trained on a small dataset. It is not a diagnostic device.
