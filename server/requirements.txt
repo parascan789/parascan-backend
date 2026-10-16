@@ -1,0 +1,9 @@
+# CPU-only runtime dependencies for the Docker image (training uses pyproject.toml).
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.8
+torchvision>=0.23
+pillow>=10
+numpy>=1.26
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9

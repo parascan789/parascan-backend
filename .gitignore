@@ -217,4 +217,17 @@ marimo/_lsp/
 __marimo__/
 
 # Streamlit
-.streamlit/secrets.toml
+.streamlit/secrets.
+
+# Codebase
+dataset
+
+# PARASCAN
+# Images (raw and generated splits) stay local; only provenance and split assignment are tracked.
+dataset/**
+!dataset/
+!dataset/raw/
+!dataset/raw/sources.csv
+!dataset/splits.csv
+# Trained weights (~30 MB each); metrics and plots are tracked.
+models/**/*.pt
