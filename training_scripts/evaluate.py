@@ -101,11 +101,14 @@ def evaluate_model(name: str, device: torch.device) -> dict:
 
 
 def expected_result(image: str) -> dict:
-    """Ground truth for a raw image path, following the same model chain as the pipeline."""
+    """Ground truth for a raw image path, following the same model chain as the pipeline.
+
+    `disease` is None for images the disease model doesn't cover (thin-smear LF).
+    """
     smear = class_for_image(SMEAR_MODEL, image)
     disease = class_for_image(DISEASE_MODEL_FOR_SMEAR[smear], image)
     species = None
-    if disease != NEGATIVE_CLASS:
+    if disease not in (None, NEGATIVE_CLASS):
         species = class_for_image(SPECIES_MODEL_FOR_DISEASE[(smear, disease)], image)
     return {"smear_type": smear, "disease": disease, "species": species,
             "label": NEGATIVE_CLASS if disease == NEGATIVE_CLASS else species}
@@ -120,10 +123,15 @@ def evaluate_pipeline(device: torch.device) -> dict:
 
     status_counts, rows = Counter(), []
     smear_ok = disease_ok = final_ok = 0
+    smear_only = Counter()  # images the pipeline can't diagnose: scored on smear type only
     for img in test_images:
         truth = expected_result(img)
         with Image.open(RAW_DIR / img) as im:
             pred = pipeline.predict(im)
+        if truth["disease"] is None:
+            smear_only[img.rsplit("/", 1)[0]] += 1
+            smear_ok += pred["smear_type"]["label"] == truth["smear_type"]
+            continue
         got = {
             "smear_type": pred["smear_type"]["label"],
             "disease": pred["disease"]["label"],
@@ -139,22 +147,29 @@ def evaluate_pipeline(device: torch.device) -> dict:
         if not correct:
             rows.append({"image": img, "expected": truth, "predicted": got})
 
-    n = len(test_images)
+    n_all = len(test_images)
+    n = n_all - sum(smear_only.values())
     decided = n - status_counts["inconclusive"]
     result = {
-        "n_test": n,
+        "n_test": n_all,
+        "n_diagnosable": n,
+        "smear_only": dict(smear_only),
         "disease_threshold": pipeline.threshold,
-        "smear_type_accuracy": smear_ok / n,
-        "disease_accuracy": disease_ok / n,
-        "final_accuracy": final_ok / n,
+        "smear_type_accuracy": smear_ok / n_all,
+        "disease_accuracy": disease_ok / n if n else None,
+        "final_accuracy": final_ok / n if n else None,
         "final_accuracy_excluding_inconclusive": final_ok / decided if decided else None,
         "status_counts": dict(status_counts),
         "not_correct": rows,
     }
     (MODELS_DIR / "pipeline_eval_test.json").write_text(json.dumps(result, indent=2))
 
-    print(f"\n=== Pipeline: {n} test images, disease threshold {pipeline.threshold:.0%} ===")
-    print(f"Smear type correct:            {result['smear_type_accuracy']:.3f}")
+    print(f"\n=== Pipeline: {n_all} test images, disease threshold {pipeline.threshold:.0%} ===")
+    print(f"Smear type correct:            {result['smear_type_accuracy']:.3f}  (all {n_all} images)")
+    if smear_only:
+        print(f"Smear type only (not diagnosable by the pipeline): {dict(smear_only)}")
+    if not n:
+        return result
     print(f"Smear type + disease correct:  {result['disease_accuracy']:.3f}")
     print(f"Final result correct:          {result['final_accuracy']:.3f}  ({final_ok}/{n})")
     if decided:

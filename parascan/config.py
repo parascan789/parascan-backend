@@ -35,7 +35,6 @@ SPECIES_MODEL_FOR_DISEASE = {
     ("thick_pbs", "malaria"): "thick_m_ic",
     ("thick_pbs", "lymphatic_filariasis"): "thick_lf_ic",
     ("thin_pbs", "malaria"): "thin_m_ic",
-    ("thin_pbs", "lymphatic_filariasis"): "thin_lf_ic",
 }
 
 # Each model maps its class names (in output order) to the raw folders that feed them.
@@ -50,10 +49,12 @@ MODEL_CLASSES: dict[str, dict[str, list[str]]] = {
         "malaria": ["thick_blood_smear/malaria"],
         "lymphatic_filariasis": ["thick_blood_smear/lymphatic_filariasis"],
     },
+    # Thin smears are checked for malaria only: lymphatic filariasis is assumed to be
+    # detected on the thick smear, and there are too few thin-smear LF images to train on.
+    # Thin LF images still count as thin smears for thin_thick_pbs_ic.
     "thin_mlf_ic": {
         "negative": ["thin_blood_smear/normal"],
         "malaria": ["thin_blood_smear/malaria"],
-        "lymphatic_filariasis": ["thin_blood_smear/lymphatic_filariasis"],
     },
     "thick_m_ic": {
         "m_P_vivax": ["thick_blood_smear/malaria/plasmodium_vivax"],
@@ -66,10 +67,6 @@ MODEL_CLASSES: dict[str, dict[str, list[str]]] = {
     "thin_m_ic": {
         "m_P_vivax": ["thin_blood_smear/malaria/plasmodium_vivax"],
         "m_P_falciparum": ["thin_blood_smear/malaria/plasmodium_falciparum"],
-    },
-    "thin_lf_ic": {
-        "lf_B_malayi": ["thin_blood_smear/lymphatic_filariasis/brugia_malayi"],
-        "lf_W_bancrofti": ["thin_blood_smear/lymphatic_filariasis/wuchereria_bancrofti"],
     },
 }
 
