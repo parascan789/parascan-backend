@@ -24,47 +24,47 @@ DISEASE_THRESHOLD = float(os.environ.get("PARASCAN_DISEASE_THRESHOLD", "0.80"))
 NEGATIVE_CLASS = "negative"
 
 # Stage 1: smear type.
-SMEAR_MODEL = "thin_thick_pbs_ic"
+SMEAR_MODEL = "s1_thin_thick_pbs_ic"
 # Stage 2: disease model for each smear type.
 DISEASE_MODEL_FOR_SMEAR = {
-    "thick_pbs": "thick_mlf_ic",
-    "thin_pbs": "thin_mlf_ic",
+    "thick_pbs": "s2_thick_mlf_ic",
+    "thin_pbs": "s2_thin_m_ic",
 }
 # Stage 3: species model for each (smear type, disease).
 SPECIES_MODEL_FOR_DISEASE = {
-    ("thick_pbs", "malaria"): "thick_m_ic",
-    ("thick_pbs", "lymphatic_filariasis"): "thick_lf_ic",
-    ("thin_pbs", "malaria"): "thin_m_ic",
+    ("thick_pbs", "malaria"): "s3_thick_m_ic",
+    ("thick_pbs", "lymphatic_filariasis"): "s3_thick_lf_ic",
+    ("thin_pbs", "malaria"): "s3_thin_m_ic",
 }
 
 # Each model maps its class names (in output order) to the raw folders that feed them.
 # A folder includes all images below it.
 MODEL_CLASSES: dict[str, dict[str, list[str]]] = {
-    "thin_thick_pbs_ic": {
+    "s1_thin_thick_pbs_ic": {
         "thick_pbs": ["thick_blood_smear"],
         "thin_pbs": ["thin_blood_smear"],
     },
-    "thick_mlf_ic": {
+    "s2_thick_mlf_ic": {
         "negative": ["thick_blood_smear/normal"],
         "malaria": ["thick_blood_smear/malaria"],
         "lymphatic_filariasis": ["thick_blood_smear/lymphatic_filariasis"],
     },
     # Thin smears are checked for malaria only: lymphatic filariasis is assumed to be
     # detected on the thick smear, and there are too few thin-smear LF images to train on.
-    # Thin LF images still count as thin smears for thin_thick_pbs_ic.
-    "thin_mlf_ic": {
+    # Thin LF images still count as thin smears for s1_thin_thick_pbs_ic.
+    "s2_thin_m_ic": {
         "negative": ["thin_blood_smear/normal"],
         "malaria": ["thin_blood_smear/malaria"],
     },
-    "thick_m_ic": {
+    "s3_thick_m_ic": {
         "m_P_vivax": ["thick_blood_smear/malaria/plasmodium_vivax"],
         "m_P_falciparum": ["thick_blood_smear/malaria/plasmodium_falciparum"],
     },
-    "thick_lf_ic": {
+    "s3_thick_lf_ic": {
         "lf_B_malayi": ["thick_blood_smear/lymphatic_filariasis/brugia_malayi"],
         "lf_W_bancrofti": ["thick_blood_smear/lymphatic_filariasis/wuchereria_bancrofti"],
     },
-    "thin_m_ic": {
+    "s3_thin_m_ic": {
         "m_P_vivax": ["thin_blood_smear/malaria/plasmodium_vivax"],
         "m_P_falciparum": ["thin_blood_smear/malaria/plasmodium_falciparum"],
     },

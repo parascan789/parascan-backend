@@ -9,7 +9,7 @@ and how many results were inconclusive (disease confidence below the threshold),
 written to models/pipeline_eval_test.json.
 
 Usage:
-    uv run python -m training_scripts.evaluate --model thin_thick_pbs_ic
+    uv run python -m training_scripts.evaluate --model s1_thin_thick_pbs_ic
     uv run python -m training_scripts.evaluate --all --pipeline
 """
 

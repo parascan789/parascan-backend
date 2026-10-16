@@ -5,8 +5,8 @@ backbone frozen, then the whole network is fine-tuned at a lower learning rate. 
 checkpoint with the best validation macro-F1 is saved to models/<model>/model.pt.
 
 Usage:
-    uv run python -m training_scripts.train --model thin_thick_pbs_ic
-    uv run python -m training_scripts.train --model thick_mlf_ic --epochs 60
+    uv run python -m training_scripts.train --model s1_thin_thick_pbs_ic
+    uv run python -m training_scripts.train --model s2_thick_mlf_ic --epochs 60
     uv run python -m training_scripts.train --model all
 """
 

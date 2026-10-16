@@ -3,29 +3,33 @@
 A three-stage image classifier for peripheral blood smears (PBS), plus a FastAPI inference server.
 
 ```
-                         ┌─ thick_pbs ─► thick_mlf_ic ─┬─ negative
-                         │                             ├─ malaria ≥ 80% ──────────────► thick_m_ic  ─► m_P_vivax | m_P_falciparum
-                         │                             └─ lymphatic_filariasis ≥ 80% ─► thick_lf_ic ─► lf_B_malayi | lf_W_bancrofti
-image ─► thin_thick_pbs_ic
-                         │                             ┌─ negative
-                         └─ thin_pbs ──► thin_mlf_ic ──┴─ malaria ≥ 80% ──────────────► thin_m_ic   ─► m_P_vivax | m_P_falciparum
+STAGE 1                  STAGE 2                           STAGE 3
+
+                     ┌─ thick_pbs ─► s2_thick_mlf_ic ─┬─ negative
+                     │                                ├─ malaria ≥ 80% ──────────────► s3_thick_m_ic  ─► m_P_vivax | m_P_falciparum
+                     │                                └─ lymphatic_filariasis ≥ 80% ─► s3_thick_lf_ic ─► lf_B_malayi | lf_W_bancrofti
+s1_thin_thick_pbs_ic ┤
+                     │                                ┌─ negative
+                     └─ thin_pbs ──► s2_thin_m_ic ────┴─ malaria ≥ 80% ──────────────► s3_thin_m_ic   ─► m_P_vivax | m_P_falciparum
 ```
+
+Model names start with their stage: `s1_` smear type, `s2_` disease, `s3_` species.
 
 1. **Smear type:** thick or thin PBS.
 2. **Disease:** using the model for that smear type. Thick smears: negative, malaria or lymphatic filariasis. Thin smears: negative or malaria.
 3. **Species:** only if the disease model's probability for malaria or lymphatic filariasis is at least the threshold (80%, `PARASCAN_DISEASE_THRESHOLD`). Below the threshold the result is **inconclusive** and should be reviewed manually.
 
-Thin smears are not checked for lymphatic filariasis. LF microfilariae are assumed to be detected on the thick smear, and there are too few thin-smear LF images to train on. Those images are still used to teach `thin_thick_pbs_ic` what a thin smear looks like.
+Thin smears are not checked for lymphatic filariasis. LF microfilariae are assumed to be detected on the thick smear, and there are too few thin-smear LF images to train on. Those images are still used to teach `s1_thin_thick_pbs_ic` what a thin smear looks like.
 
 All six models are ImageNet-pretrained `densenet121` networks (PyTorch / torchvision), fine-tuned on `dataset/raw`.
 
 | Stage | Model | Classes |
 |---|---|---|
-| 1 | `thin_thick_pbs_ic` | `thick_pbs`, `thin_pbs` |
-| 2 | `thick_mlf_ic` | `negative`, `malaria`, `lymphatic_filariasis` |
-| 2 | `thin_mlf_ic` | `negative`, `malaria` |
-| 3 | `thick_m_ic`, `thin_m_ic` | `m_P_vivax`, `m_P_falciparum` |
-| 3 | `thick_lf_ic` | `lf_B_malayi`, `lf_W_bancrofti` |
+| 1 | `s1_thin_thick_pbs_ic` | `thick_pbs`, `thin_pbs` |
+| 2 | `s2_thick_mlf_ic` | `negative`, `malaria`, `lymphatic_filariasis` |
+| 2 | `s2_thin_m_ic` | `negative`, `malaria` |
+| 3 | `s3_thick_m_ic`, `s3_thin_m_ic` | `m_P_vivax`, `m_P_falciparum` |
+| 3 | `s3_thick_lf_ic` | `lf_B_malayi`, `lf_W_bancrofti` |
 
 Class names map to raw folders in [parascan/config.py](parascan/config.py).
 
@@ -51,7 +55,7 @@ uv run python -m training_scripts.prepare_dataset
 
 # 2. Train (best checkpoint -> models/<model>/model.pt)
 uv run python -m training_scripts.train --model all
-uv run python -m training_scripts.train --model thick_mlf_ic --epochs 60   # or one at a time
+uv run python -m training_scripts.train --model s2_thick_mlf_ic --epochs 60   # or one at a time
 
 # 3. Test-set metrics per model, plus the full pipeline
 uv run python -m training_scripts.evaluate --all --pipeline
