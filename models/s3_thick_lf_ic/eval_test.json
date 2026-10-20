@@ -1,0 +1,35 @@
+{
+  "model": "s3_thick_lf_ic",
+  "n_test": 11,
+  "accuracy": 0.9090909090909091,
+  "macro_f1": 0.905982905982906,
+  "classes": [
+    "lf_B_malayi",
+    "lf_W_bancrofti"
+  ],
+  "per_class": {
+    "lf_B_malayi": {
+      "precision": 1.0,
+      "recall": 0.8571428571428571,
+      "f1-score": 0.9230769230769231,
+      "support": 7.0
+    },
+    "lf_W_bancrofti": {
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1-score": 0.8888888888888888,
+      "support": 4.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      6,
+      1
+    ],
+    [
+      0,
+      4
+    ]
+  ],
+  "missing_test_classes": []
+}

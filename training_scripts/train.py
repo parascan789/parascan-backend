@@ -190,7 +190,8 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=1e-4, help="backbone learning rate during fine-tuning")
     parser.add_argument("--head-lr", type=float, default=1e-3)
     parser.add_argument("--patience", type=int, default=10, help="early-stopping patience in epochs")
-    parser.add_argument("--workers", type=int, default=2)
+    # Worker processes crash on Windows here, and the dataset is small enough not to need them.
+    parser.add_argument("--workers", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default=None)
     parser.add_argument("--allow-missing-classes", action="store_true")

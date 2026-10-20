@@ -75,11 +75,11 @@ uv run python -m server --host 0.0.0.0 --port 8000   # reachable from other mach
 curl -F "file=@smear.jpg" http://localhost:8000/predict
 ```
 
-Interactive docs at http://localhost:8000/docs. The server needs all six `model.pt` files. `--reload` restarts on code changes during development. `HOST` and `PORT` environment variables are honoured too.
+Interactive docs at http://localhost:8000/docs. The server needs at least `s1_thin_thick_pbs_ic`; if a disease or species model it needs isn't trained yet, the result `status` is `unavailable` (see `GET /models` → `missing_models`). `--reload` restarts on code changes during development. `HOST` and `PORT` environment variables are honoured too.
 
 | Endpoint | |
 |---|---|
-| `POST /predict` | multipart `file`; returns `result` (`status`: `negative` / `positive` / `inconclusive`, final `label`) and each stage's prediction (`smear_type`, `disease`, `species`) with confidence and per-class probabilities. `species` is `null` unless the status is `positive`. |
+| `POST /predict` | multipart `file`; returns `result` (`status`: `negative` / `positive` / `inconclusive` / `unavailable`, final `label`) and each stage's prediction (`smear_type`, `disease`, `species`) with confidence and per-class probabilities. `species` is `null` unless the status is `positive`. |
 | `GET /models` | loaded models, classes, training timestamps, threshold |
 | `GET /health` | liveness |
 
