@@ -1,0 +1,35 @@
+{
+  "model": "s1_thin_thick_pbs_ic",
+  "n_test": 55,
+  "accuracy": 0.9818181818181818,
+  "macro_f1": 0.9815991970558715,
+  "classes": [
+    "thick_pbs",
+    "thin_pbs"
+  ],
+  "per_class": {
+    "thick_pbs": {
+      "precision": 0.967741935483871,
+      "recall": 1.0,
+      "f1-score": 0.9836065573770492,
+      "support": 30.0
+    },
+    "thin_pbs": {
+      "precision": 1.0,
+      "recall": 0.96,
+      "f1-score": 0.9795918367346939,
+      "support": 25.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      30,
+      0
+    ],
+    [
+      1,
+      24
+    ]
+  ],
+  "missing_test_classes": []
+}

@@ -1,0 +1,49 @@
+{
+  "model": "s2_thick_mlf_ic",
+  "n_test": 30,
+  "accuracy": 0.9666666666666667,
+  "macro_f1": 0.9682539682539683,
+  "classes": [
+    "negative",
+    "malaria",
+    "lymphatic_filariasis"
+  ],
+  "per_class": {
+    "negative": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1-score": 1.0,
+      "support": 9.0
+    },
+    "malaria": {
+      "precision": 0.9090909090909091,
+      "recall": 1.0,
+      "f1-score": 0.9523809523809523,
+      "support": 10.0
+    },
+    "lymphatic_filariasis": {
+      "precision": 1.0,
+      "recall": 0.9090909090909091,
+      "f1-score": 0.9523809523809523,
+      "support": 11.0
+    }
+  },
+  "confusion_matrix": [
+    [
+      9,
+      0,
+      0
+    ],
+    [
+      0,
+      10,
+      0
+    ],
+    [
+      0,
+      1,
+      10
+    ]
+  ],
+  "missing_test_classes": []
+}

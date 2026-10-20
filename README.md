@@ -80,10 +80,15 @@ Interactive docs at http://localhost:8000/docs. The server needs at least `s1_th
 | Endpoint | |
 |---|---|
 | `POST /predict` | multipart `file`; returns `result` (`status`: `negative` / `positive` / `inconclusive` / `unavailable`, final `label`) and each stage's prediction (`smear_type`, `disease`, `species`) with confidence and per-class probabilities. `species` is `null` unless the status is `positive`. |
+| `POST /classify` | the same pipeline in [parascan-frontend](../parascan-frontend)'s format: multipart field `image`, returns `malaria` / `lymphatic_filariasis` with `detected` (disease probability ≥ threshold), `confidence` (disease probability) and `species`, plus a `parascan` block with smear type and status. Returns 503 if the needed disease model isn't trained. |
 | `GET /models` | loaded models, classes, training timestamps, threshold |
 | `GET /health` | liveness |
 
 Environment variables: `PARASCAN_DEVICE` (`cpu`/`cuda`), `PARASCAN_DISEASE_THRESHOLD` (default `0.80`), `PARASCAN_CORS_ORIGINS` (comma-separated), `PARASCAN_MAX_UPLOAD_MB` (default 15).
+
+### Connect parascan-frontend
+
+In `parascan-frontend/.env` set `CLASSIFIER_API_URL=http://localhost:8000/classify`, start this server, then start the frontend with `node server.js` and open http://localhost:3000. The frontend's Node server calls this API server-to-server, so no CORS setting is needed.
 
 To deploy on another machine: clone the repo, copy the `models/*/model.pt` files over, `uv sync`, then `uv run python -m server --host 0.0.0.0`. The hosting provider is not chosen yet.
 
